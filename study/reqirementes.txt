@@ -1,4 +1,4 @@
 gradio
-python-dotenv
 openai
+python-dotenv
 pypdf
