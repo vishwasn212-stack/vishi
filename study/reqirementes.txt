@@ -1,4 +1,4 @@
-gradio
+streamlit
 openai
 python-dotenv
 pypdf
