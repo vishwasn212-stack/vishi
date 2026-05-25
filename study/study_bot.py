@@ -1,4 +1,4 @@
-from dataset import
+from dataset import init_db,save_chat,get_history
 import os
 import gradio as gr
 from dotenv import load_dotenv
