@@ -1,78 +1,104 @@
 import os
-import gradio as gr
+import streamlit as st
 from dotenv import load_dotenv
 from openai import OpenAI
 from pypdf import PdfReader
-from dataset import init_db, save_chat, get_history
 
-# Load environment variables
+# Load env variables
 load_dotenv()
 
-# Get API key
+# OpenAI API key
 api_key = os.getenv("API_KEY")
 
 # OpenAI client
 client = OpenAI(api_key=api_key)
 
-# Initialize database
-init_db()
+# Streamlit page config
+st.set_page_config(
+    page_title="Study Buddy Bot",
+    page_icon="📚",
+    layout="centered"
+)
 
-# Store uploaded notes
-uploaded_text = ""
+st.title("📚 Study Buddy Bot")
 
+# Session state
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+if "uploaded_text" not in st.session_state:
+    st.session_state.uploaded_text = ""
+
+
+# Upload PDF
+uploaded_file = st.file_uploader(
+    "Upload PDF Notes",
+    type=["pdf"]
+)
 
 # Extract PDF text
-def extract_pdf_text(pdf_file):
-    global uploaded_text
+if uploaded_file is not None:
 
-    if pdf_file is None:
-        return "Please upload a PDF."
-
-    reader = PdfReader(pdf_file)
+    reader = PdfReader(uploaded_file)
     text = ""
 
     for page in reader.pages:
-        page_text = page.extract_text()
+        extracted = page.extract_text()
 
-        if page_text:
-            text += page_text + "\n"
+        if extracted:
+            text += extracted + "\n"
 
-    uploaded_text = text
+    st.session_state.uploaded_text = text
 
-    return "✅ PDF uploaded successfully!"
+    st.success("✅ PDF uploaded successfully!")
 
 
-# Chatbot function
-def study_buddy(user_input, history):
-    global uploaded_text
+# Display chat history
+for message in st.session_state.messages:
 
-    if not user_input:
-        return history, history
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
 
+
+# User input
+user_input = st.chat_input("Ask your question...")
+
+
+if user_input:
+
+    # Show user message
+    st.chat_message("user").markdown(user_input)
+
+    st.session_state.messages.append({
+        "role": "user",
+        "content": user_input
+    })
+
+    # Prompt
     prompt = f"""
-    You are a smart Study Buddy AI.
+    You are a Study Buddy AI.
 
     Uploaded Notes:
-    {uploaded_text}
+    {st.session_state.uploaded_text}
 
     Student Question:
     {user_input}
 
-    Your tasks:
+    Tasks:
     - Explain concepts simply
     - Generate quizzes
-    - Create flashcards
     - Summarize notes
-    - Answer from uploaded notes
+    - Create flashcards
     """
 
     try:
+
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {
                     "role": "system",
-                    "content": "You are a helpful study assistant."
+                    "content": "You are a helpful AI tutor."
                 },
                 {
                     "role": "user",
@@ -86,65 +112,11 @@ def study_buddy(user_input, history):
     except Exception as e:
         bot_reply = f"Error: {str(e)}"
 
-    # Save to DB
-    save_chat(user_input, bot_reply)
+    # Show assistant response
+    with st.chat_message("assistant"):
+        st.markdown(bot_reply)
 
-    history.append((user_input, bot_reply))
-
-    return history, history
-
-
-# Load previous chats
-def load_history():
-    rows = get_history()
-    return [(u, b) for u, b in rows]
-
-
-# Gradio UI
-with gr.Blocks(theme=gr.themes.Soft()) as demo:
-
-    gr.Markdown(
-        """
-        # 📚 Study Buddy Bot
-        Upload notes and ask questions from your PDF.
-        """
-    )
-
-    chatbot = gr.Chatbot(
-        value=load_history(),
-        height=500
-    )
-
-    state = gr.State(load_history())
-
-    with gr.Row():
-        file_upload = gr.File(label="📄 Upload PDF")
-        upload_btn = gr.Button("Upload")
-
-    upload_status = gr.Textbox(label="Status")
-
-    upload_btn.click(
-        fn=extract_pdf_text,
-        inputs=file_upload,
-        outputs=upload_status
-    )
-
-    user_msg = gr.Textbox(
-        label="Ask Question",
-        placeholder="Generate quiz from chapter 2..."
-    )
-
-    send_btn = gr.Button("Send")
-
-    send_btn.click(
-        fn=study_buddy,
-        inputs=[user_msg, state],
-        outputs=[chatbot, state]
-    )
-
-# Run app
-demo.launch(
-    server_name="0.0.0.0",
-    server_port=7860,
-    share=True
-)
+    st.session_state.messages.append({
+        "role": "assistant",
+        "content": bot_reply
+    })
