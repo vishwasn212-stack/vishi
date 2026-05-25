@@ -1,4 +1,3 @@
-from dataset import init_db,save_chat,get_history
 import os
 import gradio as gr
 from dotenv import load_dotenv
@@ -6,80 +5,88 @@ from openai import OpenAI
 from pypdf import PdfReader
 from dataset import init_db, save_chat, get_history
 
-# Load .env file
+# Load environment variables
 load_dotenv()
 
-# Get API key securely
+# Get API key
 api_key = os.getenv("API_KEY")
 
-# OpenAI Client
-client = OpenAI(api_key="api_key")
+# OpenAI client
+client = OpenAI(api_key=api_key)
 
 # Initialize database
 init_db()
 
+# Store uploaded notes
 uploaded_text = ""
 
 
-# Extract text from PDF
+# Extract PDF text
 def extract_pdf_text(pdf_file):
     global uploaded_text
 
     if pdf_file is None:
-        return "Please upload a PDF file."
+        return "Please upload a PDF."
 
     reader = PdfReader(pdf_file)
     text = ""
 
     for page in reader.pages:
-        extracted = page.extract_text()
+        page_text = page.extract_text()
 
-        if extracted:
-            text += extracted + "\n"
+        if page_text:
+            text += page_text + "\n"
 
     uploaded_text = text
 
-    return "PDF uploaded successfully!"
+    return "✅ PDF uploaded successfully!"
 
 
-# Chatbot Function
+# Chatbot function
 def study_buddy(user_input, history):
     global uploaded_text
 
+    if not user_input:
+        return history, history
+
     prompt = f"""
-    You are an intelligent Study Buddy Bot.
+    You are a smart Study Buddy AI.
 
     Uploaded Notes:
     {uploaded_text}
 
-    User Question:
+    Student Question:
     {user_input}
 
     Your tasks:
-    - Explain topics simply
+    - Explain concepts simply
     - Generate quizzes
     - Create flashcards
     - Summarize notes
     - Answer from uploaded notes
     """
 
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {
-                "role": "system",
-                "content": "You are a helpful AI study assistant."
-            },
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ]
-    )
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a helpful study assistant."
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ]
+        )
 
-    bot_reply = response.choices[0].message.content
+        bot_reply = response.choices[0].message.content
 
-    # Save history to database
+    except Exception as e:
+        bot_reply = f"Error: {str(e)}"
+
+    # Save to DB
     save_chat(user_input, bot_reply)
 
     history.append((user_input, bot_reply))
@@ -87,25 +94,34 @@ def study_buddy(user_input, history):
     return history, history
 
 
-# Load old chat history
+# Load previous chats
 def load_history():
     rows = get_history()
     return [(u, b) for u, b in rows]
 
 
 # Gradio UI
-with gr.Blocks() as demo:
-    gr.Markdown("# 📚 Study Buddy Bot")
+with gr.Blocks(theme=gr.themes.Soft()) as demo:
 
-    chatbot = gr.Chatbot(value=load_history(), height=500)
+    gr.Markdown(
+        """
+        # 📚 Study Buddy Bot
+        Upload notes and ask questions from your PDF.
+        """
+    )
+
+    chatbot = gr.Chatbot(
+        value=load_history(),
+        height=500
+    )
 
     state = gr.State(load_history())
 
     with gr.Row():
-        file_upload = gr.File(label="Upload PDF Notes")
+        file_upload = gr.File(label="📄 Upload PDF")
         upload_btn = gr.Button("Upload")
 
-    upload_status = gr.Textbox(label="Upload Status")
+    upload_status = gr.Textbox(label="Status")
 
     upload_btn.click(
         fn=extract_pdf_text,
@@ -114,7 +130,7 @@ with gr.Blocks() as demo:
     )
 
     user_msg = gr.Textbox(
-        label="Ask a question",
+        label="Ask Question",
         placeholder="Generate quiz from chapter 2..."
     )
 
@@ -126,4 +142,9 @@ with gr.Blocks() as demo:
         outputs=[chatbot, state]
     )
 
-demo.launch(share=True)
+# Run app
+demo.launch(
+    server_name="0.0.0.0",
+    server_port=7860,
+    share=True
+)
